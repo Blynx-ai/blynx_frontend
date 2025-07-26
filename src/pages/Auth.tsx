@@ -25,6 +25,8 @@ const Auth = () => {
           email,
           password,
         });
+localStorage.setItem("token", res.data.access_token);
+localStorage.setItem("user", JSON.stringify(res.data.user));
 
     // setTimeout(() => {
     //   setIsLoading(false);
@@ -80,11 +82,12 @@ const handleSignup = async (e: React.FormEvent) => {
   const password = (document.getElementById("password-signup") as HTMLInputElement).value;
 
   try {
-    const res = await api.post("/auth/register", {
+   const response = await api.post('/auth/register', {
       username: name,
-      email,
-      password
+      email: email,
+      password: password,
     });
+    console.log('Signup successful:', response.data);
 
     setIsLoading(false);
     navigate("/analyze");

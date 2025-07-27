@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // Centralized API URL configuration
-export const API_BASE_URL = 'https://blynx-backend.azurewebsites.net';
+export const API_BASE_URL = 'https://b59482f06c9c.ngrok-free.app';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

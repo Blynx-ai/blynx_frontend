@@ -1,8 +1,12 @@
 import { useEffect, useRef } from "react";
-import { Loader2, Activity, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
+import { 
+  Activity, CheckCircle, Clock, Loader2, Zap, Target, 
+  Users, Globe, Building, TrendingUp, AlertCircle
+} from "lucide-react";
 
 type LogEntry = {
   timestamp: string;
@@ -17,6 +21,7 @@ type LogEntry = {
 interface LoadingScreenProps {
   logs: LogEntry[];
   business?: any;
+  isConnecting?: boolean;
 }
 
 const getAgentIcon = (agent: string) => {
@@ -31,7 +36,22 @@ const getAgentIcon = (agent: string) => {
     case 'analyzer':
     case 'content':
     case 'data':
+    case 'classifier':
+    case 'extractor':
       return <Activity className="w-4 h-4" />;
+    case 'scorer':
+      return <Target className="w-4 h-4" />;
+    case 'feedback':
+      return <TrendingUp className="w-4 h-4" />;
+    case 'news':
+    case 'news_analyzer':
+      return <Globe className="w-4 h-4" />;
+    case 'accuracy':
+    case 'impact':
+    case 'language':
+    case 'brand':
+    case 'reputation':
+      return <CheckCircle className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -49,11 +69,22 @@ const getAgentColor = (agent: string) => {
     case 'analyzer':
     case 'content':
     case 'data':
+    case 'classifier':
+    case 'extractor':
       return 'bg-purple-100 text-purple-800 border-purple-200';
     case 'scorer':
       return 'bg-orange-100 text-orange-800 border-orange-200';
     case 'feedback':
       return 'bg-cyan-100 text-cyan-800 border-cyan-200';
+    case 'news':
+    case 'news_analyzer':
+      return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+    case 'accuracy':
+    case 'impact':
+    case 'language':
+    case 'brand':
+    case 'reputation':
+      return 'bg-emerald-100 text-emerald-800 border-emerald-200';
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200';
   }
@@ -67,7 +98,13 @@ const formatTimestamp = (timestamp: string) => {
   }
 };
 
-export default function LoadingScreen({ logs = [], business }: LoadingScreenProps) {
+const getProgressPercentage = (logs: LogEntry[]) => {
+  const totalSteps = 15; // Approximate number of major steps
+  const completedSteps = logs.length;
+  return Math.min((completedSteps / totalSteps) * 100, 95); // Cap at 95% until completion
+};
+
+export default function LoadingScreen({ logs = [], business, isConnecting = false }: LoadingScreenProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,6 +115,7 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
   }, [logs]);
 
   const latestLog = logs[logs.length - 1];
+  const progress = getProgressPercentage(logs);
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
@@ -90,9 +128,15 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
                 <div className="w-20 h-20 bg-gradient-primary rounded-full flex items-center justify-center shadow-brand">
                   <Loader2 className="w-10 h-10 text-white animate-spin" />
                 </div>
-                <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                  <Activity className="w-3 h-3 text-white" />
-                </div>
+                {isConnecting ? (
+                  <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center">
+                    <Clock className="w-3 h-3 text-white" />
+                  </div>
+                ) : (
+                  <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <Activity className="w-3 h-3 text-white" />
+                  </div>
+                )}
               </div>
             </div>
             
@@ -100,14 +144,30 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
               Analyzing {business?.name || 'Your Brand'}...
             </h1>
             
-            <p className="text-lg text-muted-foreground mb-2">
+            <p className="text-lg text-muted-foreground mb-4">
               Our AI agents are processing your brand across multiple dimensions
             </p>
+            
+            {/* Progress Bar */}
+            <div className="max-w-md mx-auto mb-4">
+              <div className="flex justify-between text-sm mb-2">
+                <span>Progress</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+            </div>
             
             {latestLog && (
               <div className="inline-flex items-center gap-2 bg-background rounded-full px-4 py-2 shadow-sm">
                 {getAgentIcon(latestLog.agent)}
                 <span className="text-sm font-medium">{latestLog.message}</span>
+              </div>
+            )}
+
+            {isConnecting && (
+              <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <AlertCircle className="w-4 h-4" />
+                <span>Establishing connection...</span>
               </div>
             )}
           </div>
@@ -124,27 +184,45 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600 mb-1">
-                    {logs.filter(log => log.agent.toLowerCase().includes('scraper') || log.agent.toLowerCase() === 'ingestor').length}
+                    {logs.filter(log => 
+                      log.agent.toLowerCase().includes('scraper') || 
+                      log.agent.toLowerCase() === 'ingestor' ||
+                      log.message.toLowerCase().includes('successfully scraped')
+                    ).length}
                   </div>
                   <div className="text-sm text-muted-foreground">Data Sources</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600 mb-1">
-                    {logs.filter(log => log.agent.toLowerCase().includes('analyzer') || log.agent.toLowerCase().includes('content')).length}
+                    {logs.filter(log => 
+                      log.agent.toLowerCase().includes('analyzer') || 
+                      log.agent.toLowerCase().includes('classifier') ||
+                      log.agent.toLowerCase().includes('extractor')
+                    ).length}
                   </div>
                   <div className="text-sm text-muted-foreground">Analyzed</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600 mb-1">
-                    {logs.filter(log => log.agent.toLowerCase().includes('evaluator') || log.agent.toLowerCase().includes('scorer')).length}
+                    {logs.filter(log => 
+                      log.agent.toLowerCase().includes('evaluator') || 
+                      log.agent.toLowerCase().includes('accuracy') ||
+                      log.agent.toLowerCase().includes('impact') ||
+                      log.agent.toLowerCase().includes('language') ||
+                      log.agent.toLowerCase().includes('brand') ||
+                      log.agent.toLowerCase().includes('reputation')
+                    ).length}
                   </div>
                   <div className="text-sm text-muted-foreground">Evaluated</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-orange-600 mb-1">
-                    {logs.filter(log => log.agent.toLowerCase().includes('feedback')).length}
+                    {logs.filter(log => 
+                      log.agent.toLowerCase().includes('scorer') ||
+                      log.agent.toLowerCase().includes('feedback')
+                    ).length}
                   </div>
-                  <div className="text-sm text-muted-foreground">Insights</div>
+                  <div className="text-sm text-muted-foreground">Scoring</div>
                 </div>
               </div>
             </CardContent>
@@ -156,7 +234,7 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Clock className="w-5 h-5 text-accent" />
-                  Live Agent Logs
+                  Live Agent Activity
                   <Badge variant="outline" className="ml-auto">
                     {logs.length} events
                   </Badge>
@@ -166,14 +244,17 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
                 <ScrollArea className="h-80 w-full rounded-md border p-4" ref={scrollAreaRef}>
                   <div className="space-y-3">
                     {logs.map((log, index) => (
-                      <div key={index} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                        <div className="flex-shrink-0 mt-0.5">
+                      <div key={index} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
+                        <div className="flex-shrink-0">
                           {getAgentIcon(log.agent)}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <Badge className={`text-xs px-2 py-0.5 ${getAgentColor(log.agent)}`}>
-                              {log.agent}
+                            <Badge 
+                              variant="outline" 
+                              className={`text-xs ${getAgentColor(log.agent)}`}
+                            >
+                              {log.agent.toUpperCase()}
                             </Badge>
                             <span className="text-xs text-muted-foreground">
                               {formatTimestamp(log.timestamp)}
@@ -207,11 +288,11 @@ export default function LoadingScreen({ logs = [], business }: LoadingScreenProp
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
-                  <span>Evaluating market positioning</span>
+                  <span>Evaluating market positioning and accuracy</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
-                  <span>Generating insights and recommendations</span>
+                  <span>Computing Blynx Score and generating insights</span>
                 </div>
               </div>
             </CardContent>

@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { 
   Zap, Download, Share2, AlertTriangle, Award, Star, TrendingUp, Target, 
   Activity, CheckCircle, Clock, Users, Globe, Building, ExternalLink,
-  Loader2, BarChart3, Lightbulb, ArrowRight
+  Loader2, BarChart3, Lightbulb, ArrowRight, RefreshCw, Eye
 } from "lucide-react";
 import html2pdf from 'html2pdf.js';
 import { toast } from "sonner";
@@ -147,9 +147,15 @@ const Results = () => {
   const [business, setBusiness] = useState<Business | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [isFetchingResults, setIsFetchingResults] = useState(false);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [manualResultsAvailable, setManualResultsAvailable] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const token = localStorage.getItem("token");
 
   useEffect(() => {
@@ -176,8 +182,13 @@ const Results = () => {
 
     return () => {
       // Cleanup WebSocket on unmount
-      if (ws) {
-        ws.close();
+      if (wsRef.current) {
+        console.log("Cleaning up WebSocket connection");
+        wsRef.current.close(1000, "Component unmounting");
+        wsRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
     };
   }, [location.state, isAuthenticated]);
@@ -186,6 +197,15 @@ const Results = () => {
     if (!flowId) return;
 
     connectToWebSocket(flowId);
+
+    // Check for manual results availability after some time
+    const checkResultsTimer = setTimeout(() => {
+      setManualResultsAvailable(true);
+    }, 30000); // Show manual button after 30 seconds
+
+    return () => {
+      clearTimeout(checkResultsTimer);
+    };
   }, [flowId]);
 
   useEffect(() => {
@@ -226,17 +246,30 @@ const Results = () => {
 
   const connectToWebSocket = (id: string) => {
     // Close existing connection if any
-    if (ws) {
-      ws.close();
+    if (wsRef.current) {
+      wsRef.current.close(1000, "Reconnecting");
+      wsRef.current = null;
+    }
+
+    // Clear any pending reconnection
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
 
     const wsUrl = `${API_BASE_URL.replace('http', 'ws')}/api/v1/agents/logs/${id}`;
+    console.log("Connecting to WebSocket:", wsUrl);
+    
     const websocket = new WebSocket(wsUrl);
+    wsRef.current = websocket;
+    setWs(websocket);
 
     websocket.onopen = () => {
-      console.log("WebSocket connected");
+      console.log("WebSocket connected successfully");
       setIsConnecting(false);
-      setWs(websocket);
+      setWsConnected(true);
+      setConnectionAttempts(0);
+      toast.success("Connected to live analysis feed");
     };
 
     websocket.onmessage = (event) => {
@@ -270,19 +303,27 @@ const Results = () => {
             });
           }
 
-          // Check if flow is completed
+          // Check if flow is completed based on specific completion messages
           const completedLog = newLogs.find((log: LogEntry) => 
             log.message?.includes("Enhanced agent flow completed successfully") ||
-            log.message?.includes("Final result saved for flow")
+            log.message?.includes("Final result saved for flow") ||
+            log.message?.includes("Flow completed") ||
+            log.agent?.toLowerCase().includes("reputation") // Since reputation is typically the last step
           );
 
           if (completedLog) {
             console.log("Flow completed, fetching results...");
-            setTimeout(() => fetchFinalResult(id), 1000); // Small delay to ensure data is saved
+            setManualResultsAvailable(true);
+            // Don't close WebSocket immediately, wait a bit then fetch results
+            setTimeout(() => fetchFinalResult(id), 2000);
           }
-        } else if (data.type === "status" && data.data.final) {
-          console.log("Flow completed via status message");
-          fetchFinalResult(id);
+        } else if (data.type === "status") {
+          console.log("Status update:", data.data);
+          if (data.data.final || data.data.status === "completed") {
+            console.log("Flow completed via status message");
+            setManualResultsAvailable(true);
+            setTimeout(() => fetchFinalResult(id), 1000);
+          }
         }
       } catch (error) {
         console.error("Error parsing WebSocket message:", error);
@@ -291,17 +332,42 @@ const Results = () => {
 
     websocket.onerror = (error) => {
       console.error("WebSocket error:", error);
-      setIsConnecting(false);
-      toast.error("Connection error. Retrying...");
+      setWsConnected(false);
+      toast.error("Connection error. Will attempt to reconnect...");
     };
 
-    websocket.onclose = () => {
-      console.log("WebSocket closed");
+    websocket.onclose = (event) => {
+      console.log("WebSocket closed:", event.code, event.reason);
+      setWsConnected(false);
       setIsConnecting(false);
+      
+      // Only attempt reconnection if it wasn't a manual close and we're still in running phase
+      if (event.code !== 1000 && analysisPhase === 'running' && connectionAttempts < 5) {
+        const newAttempts = connectionAttempts + 1;
+        setConnectionAttempts(newAttempts);
+        console.log(`Attempting to reconnect (${newAttempts}/5)...`);
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (analysisPhase === 'running') {
+            connectToWebSocket(id);
+          }
+        }, Math.min(1000 * Math.pow(2, newAttempts), 10000)); // Exponential backoff, max 10s
+      } else if (connectionAttempts >= 5) {
+        toast.error("Connection lost. Use the manual refresh button to check for results.");
+        setManualResultsAvailable(true);
+      }
     };
   };
 
-  const fetchFinalResult = async (id: string) => {
+  const fetchFinalResult = async (id: string, isManual: boolean = false) => {
+    if (isFetchingResults) return;
+    
+    setIsFetchingResults(true);
+    
+    if (isManual) {
+      toast.info("Checking for results...");
+    }
+
     try {
       const headers: HeadersInit = {
         "Content-Type": "application/json",
@@ -321,21 +387,47 @@ const Results = () => {
         setAnalysisResult(resultData);
         setAnalysisPhase('completed');
         toast.success("Analysis completed!");
+        
+        // Close WebSocket now that we have results
+        if (wsRef.current) {
+          wsRef.current.close(1000, "Analysis completed");
+          wsRef.current = null;
+        }
       } else {
         console.error("Failed to fetch results:", response.status);
-        // Show mock results after some time
-        setTimeout(() => {
-          setAnalysisPhase('completed');
-          generateMockResults();
-        }, 2000);
+        if (isManual) {
+          toast.error("Results not ready yet. Please try again in a moment.");
+        } else {
+          // Show mock results after some time for automatic fetch
+          setTimeout(() => {
+            if (analysisPhase !== 'completed') {
+              setAnalysisPhase('completed');
+              generateMockResults();
+            }
+          }, 5000);
+        }
       }
     } catch (err) {
       console.error("Error fetching final result:", err);
-      // Show mock results after some time
-      setTimeout(() => {
-        setAnalysisPhase('completed');
-        generateMockResults();
-      }, 2000);
+      if (isManual) {
+        toast.error("Failed to fetch results. Please try again.");
+      } else {
+        // Show mock results after some time for automatic fetch
+        setTimeout(() => {
+          if (analysisPhase !== 'completed') {
+            setAnalysisPhase('completed');
+            generateMockResults();
+          }
+        }, 5000);
+      }
+    } finally {
+      setIsFetchingResults(false);
+    }
+  };
+
+  const handleManualFetchResults = () => {
+    if (flowId) {
+      fetchFinalResult(flowId, true);
     }
   };
 
@@ -371,6 +463,7 @@ const Results = () => {
       created_at: new Date().toISOString()
     };
     setAnalysisResult(mockResult);
+    toast.success("Analysis completed with sample results!");
   };
 
   const getScoreColor = (score: number) => {
@@ -437,18 +530,47 @@ const Results = () => {
             </span>
           </Link>
           
-          {analysisPhase === 'completed' && (
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <Download className="w-4 h-4 mr-2" />
-                Export Report
+          <div className="flex items-center gap-3">
+            {/* Connection Status */}
+            {analysisPhase === 'running' && (
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                <span className="text-sm text-muted-foreground">
+                  {wsConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+            )}
+
+            {/* Manual Results Button */}
+            {manualResultsAvailable && analysisPhase === 'running' && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleManualFetchResults}
+                disabled={isFetchingResults}
+              >
+                {isFetchingResults ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Eye className="w-4 h-4 mr-2" />
+                )}
+                Check Results
               </Button>
-              <Button variant="outline" size="sm">
-                <Share2 className="w-4 h-4 mr-2" />
-                Share
-              </Button>
-            </div>
-          )}
+            )}
+
+            {analysisPhase === 'completed' && (
+              <>
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Report
+                </Button>
+                <Button variant="outline" size="sm">
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -467,9 +589,13 @@ const Results = () => {
                     <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center">
                       <Clock className="w-3 h-3 text-white" />
                     </div>
-                  ) : (
+                  ) : wsConnected ? (
                     <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
                       <Activity className="w-3 h-3 text-white" />
+                    </div>
+                  ) : (
+                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+                      <AlertTriangle className="w-3 h-3 text-white" />
                     </div>
                   )}
                 </div>
@@ -499,13 +625,50 @@ const Results = () => {
                 </div>
               )}
 
+              {/* Connection Status Messages */}
               {isConnecting && (
                 <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
                   <AlertTriangle className="w-4 h-4" />
                   <span>Establishing connection...</span>
                 </div>
               )}
+
+              {!wsConnected && !isConnecting && connectionAttempts > 0 && (
+                <div className="mt-4 flex items-center justify-center gap-2 text-sm text-yellow-600">
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Reconnecting... (attempt {connectionAttempts}/5)</span>
+                </div>
+              )}
             </div>
+
+            {/* Manual Results Button - Prominent */}
+            {manualResultsAvailable && (
+              <Card className="mb-6 border-2 border-primary/50 bg-primary/5">
+                <CardContent className="p-6 text-center">
+                  <h3 className="font-semibold mb-2">Analysis May Be Complete</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Click below to check if your results are ready
+                  </p>
+                  <Button 
+                    onClick={handleManualFetchResults}
+                    disabled={isFetchingResults}
+                    size="lg"
+                  >
+                    {isFetchingResults ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Checking...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Results
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Progress Overview */}
             <Card className="mb-6 shadow-brand">
@@ -773,7 +936,8 @@ const Results = () => {
                             <li key={index}>• {strength}</li>
                           )) || [
                             <li key="1">• Strong brand name recognition potential</li>,
-                            <li key="2">• Clear industry positioning in {business?.industry_type}</li>
+                            <li key="2">• Clear industry positioning in {business?.industry_type}</li>,
+                            <li key="3">• Professional web presence established</li>
                           ]}
                         </ul>
                       </div>

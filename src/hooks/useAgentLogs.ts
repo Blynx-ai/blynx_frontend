@@ -8,7 +8,7 @@ export function useAgentLogs(flowId: string | null) {
   useEffect(() => {
     if (!flowId) return;
 
-    const ws = new WebSocket(`wss://blynx-backend.azurewebsites.net/api/v1/agents/logs/${flowId}`);
+    const ws = new WebSocket(`wss://b59482f06c9c.ngrok-free.app/api/v1/agents/logs/${flowId}`);
 
     ws.onopen = () => console.log("WebSocket connected");
 

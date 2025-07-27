@@ -29,7 +29,9 @@ const Results = () => {
   const [showResults, setShowResults] = useState(false);
   const analysisData = location.state?.analysisData as AnalysisData;
   const [logs, setLogs] = useState<string[]>([]);
-const flowId = location.state?.flowId;
+// const flowId = location.state?.flowId;
+const [flowId, setFlowId] = useState<string | null>(null);
+
 
 
   // Mock Blynx Score and insights based on form data
@@ -46,34 +48,84 @@ const reportRef = useRef<HTMLDivElement>(null);
   //   }, 1000);
   //   return () => clearTimeout(timer);
   // }, []);
+  
   useEffect(() => {
-  if (!flowId) return;
+  // Prepare payload based on analysisData
+  if (!analysisData) return;
 
-  const ws = new WebSocket(`wss://blynx-backend.azurewebsites.net/api/v1/agents/logs/${flowId}`);
-  ws.onopen = () => {
-    console.log("WebSocket connected");
-  };
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+  const triggerAgent = async () => {
+    try {
+      const response = await fetch("https://blynx-backend.azurewebsites.net/api/v1/agents/trigger", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(analysisData),
+      });
 
-    if (data.type === "logs") {
-      setLogs(prev => [...prev, data.data]);
-    } else if (data.type === "status" && data.data.final) {
-      console.log("Flow completed");
+      const result = await response.json();
+
+      if (result.flow_id) {
+        setFlowId(result.flow_id);
+      } else {
+        console.error("Flow ID not returned from trigger");
+      }
+    } catch (err) {
+      console.error("Failed to trigger agent:", err);
     }
   };
-  ws.onerror = (error) => {
-    console.error("WebSocket error", error);
-  };
-  ws.onclose = () => {
-    console.log("WebSocket closed");
-  };
-  return () => ws.close();
-}, [flowId]);
 
-if (!showResults) {
-  return <LoadingScreen logs={logs} />;
-}
+  triggerAgent();
+  }, [analysisData]);
+
+    useEffect(() => {
+    if (!flowId) return;
+
+    const ws = new WebSocket(`wss://blynx-backend.azurewebsites.net/api/v1/agents/logs/${flowId}`);
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === "logs") {
+        setLogs((prev) => [...prev, data.data]);
+      } else if (data.type === "status" && data.data.final) {
+        console.log("Flow completed");
+          fetchResult(flowId); // new function
+        setShowResults(true);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+    };
+
+    return () => ws.close();
+  }, [flowId]);
+
+
+  if (!showResults) {
+    return <LoadingScreen logs={logs} />;
+  }
+
+  const fetchResult = async (id: string) => {
+  try {
+    const res = await fetch(`https://blynx-backend.azurewebsites.net/api/v1/agents/result/${id}`);
+    const resultData = await res.json();
+    console.log("Final Analysis Result:", resultData);
+
+    // You can now use this data to replace mock scores/insights
+    // e.g. setBlynxScore(resultData.score)
+  } catch (err) {
+    console.error("Error fetching final result:", err);
+  }
+};
 
 
   if (!analysisData) {

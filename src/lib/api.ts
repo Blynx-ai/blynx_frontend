@@ -15,6 +15,22 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
-});
+},
+  (error) => Promise.reject(error)
+);
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // You could log out the user or redirect to login
+      console.warn("Unauthorized, logging out...");
+      localStorage.removeItem("token");
+      window.location.href = "/login"; // or your login route
+    }
+    return Promise.reject(error);
+  }
+);
+
 
 export default api;

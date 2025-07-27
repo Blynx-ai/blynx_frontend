@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Zap, Building, Globe, Users, Target, ArrowRight, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import api from "@/lib/api"; // Add this import
+
 
 const Analyze = () => {
   const [formData, setFormData] = useState({
@@ -16,7 +18,9 @@ const Analyze = () => {
     targetAudience: "",
     description: "",
     website: "",
-    socialMedia: "",
+    socialMedia_instagram: "",
+    socialMedia_linkedin: "",
+    socialMedia_x: "",
     marketingGoals: []
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -46,10 +50,43 @@ const Analyze = () => {
     setIsLoading(true);
     
     // Simulate API call to backend
-    setTimeout(() => {
-      // Navigate to results with the form data
-      navigate("/results", { state: { analysisData: formData } });
-    }, 3000);
+    // setTimeout(() => {
+    //   // Navigate to results with the form data
+    //   navigate("/results", { state: { analysisData: formData } });
+    // }, 3000);
+    try {
+  const token = localStorage.getItem("access_token"); // Adjust if you're storing it differently
+
+  const response = await api.post(
+    "https://blynx-backend.azurewebsites.net/api/v1/business/",
+    {
+      name: formData.brandName,
+      about_us: formData.description,
+      industry_type: formData.industry,
+      customer_type: formData.targetAudience,
+      landing_page_url: formData.website,
+      instagram_url: formData.socialMedia_instagram, // optionally split and validate URLs
+      linkedin_url: formData.socialMedia_linkedin,
+      x_url: formData.socialMedia_x,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+
+  console.log("Business created:", response.data);
+
+  // Navigate to results after success
+  navigate("/results", { state: { analysisData: formData } });
+} catch (error) {
+  console.error("Failed to submit business data:", error.response?.data || error.message);
+} finally {
+  setIsLoading(false);
+}
+
   };
 
   return (
@@ -182,10 +219,22 @@ const Analyze = () => {
                 <div className="space-y-2">
                   <Label htmlFor="socialMedia">Social Media Handles</Label>
                   <Input
-                    id="socialMedia"
+                    id="socialMedia_instagram"
+                    placeholder="@yourbrand, instagram.com/company/yourbrand"
+                    value={formData.socialMedia_instagram}
+                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia_instagram: e.target.value }))}
+                  />
+                  <Input
+                    id="socialMedia_linkedin"
                     placeholder="@yourbrand, linkedin.com/company/yourbrand"
-                    value={formData.socialMedia}
-                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia: e.target.value }))}
+                    value={formData.socialMedia_linkedin}
+                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia_linkedin: e.target.value }))}
+                  />
+                  <Input
+                    id="socialMedia_x"
+                    placeholder="@yourbrand, x.com/company/yourbrand"
+                    value={formData.socialMedia_x}
+                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia_x: e.target.value }))}
                   />
                 </div>
 

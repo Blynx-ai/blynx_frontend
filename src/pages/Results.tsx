@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import html2pdf from "html2pdf.js";
+import { useRef } from "react";
+
 import { 
   Zap, TrendingUp, Target, Users, Globe, ArrowRight, 
   Download, Share2, BarChart3, Lightbulb, CheckCircle,
@@ -31,6 +34,7 @@ const Results = () => {
   const digitalFootprint = Math.floor(Math.random() * 20) + 75;
   const brandCoherence = Math.floor(Math.random() * 35) + 60;
   const audienceAlignment = Math.floor(Math.random() * 25) + 70;
+const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -74,6 +78,19 @@ const Results = () => {
 
   const scoreLevel = getScoreLevel(blynxScore);
 
+  const handleExport = () => {
+  if (reportRef.current) {
+    const opt = {
+      margin:       0.5,
+      filename:     `${analysisData.brandName}_Blynx_Report.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(reportRef.current).save();
+  }
+};
+
   return (
     <div className="min-h-screen bg-gradient-subtle">
       {/* Header */}
@@ -89,7 +106,7 @@ const Results = () => {
           </Link>
           
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleExport}>
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
@@ -137,7 +154,7 @@ const Results = () => {
           </div>
         ) : (
           // Results Display
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto" ref={reportRef}>
             {/* Header */}
             <div className="text-center mb-12">
               <h1 className="text-4xl md:text-5xl font-bold mb-4">

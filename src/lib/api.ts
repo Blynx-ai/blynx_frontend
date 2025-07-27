@@ -2,7 +2,8 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://blynx-backend.azurewebsites.net",
+  //baseURL: "https://blynx-backend.azurewebsites.net",
+  baseURL:"https://8c0a9f36c1cd.ngrok-free.app/",
   headers: {
     "Content-Type": "application/json",
   },
@@ -17,8 +18,10 @@ api.interceptors.request.use((config) => {
   return config;
 },
   (error) => Promise.reject(error)
-  
+
 );
+console.log("JWT Token sent:", localStorage.getItem("token"));
+
 
 api.interceptors.response.use(
   (response) => response,

@@ -1,40 +1,42 @@
 // src/lib/api.ts
-import axios from "axios";
+import axios from 'axios';
+
+// Centralized API URL configuration
+export const API_BASE_URL = 'https://blynx-backend.azurewebsites.net';
 
 const api = axios.create({
-  //baseURL: "https://blynx-backend.azurewebsites.net",
-  baseURL:"https://8c0a9f36c1cd.ngrok-free.app/",
+  baseURL: API_BASE_URL,
+  timeout: 30000,
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
-// 🔐 Attach JWT token automatically
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-},
-  (error) => Promise.reject(error)
-
-);
-console.log("JWT Token sent:", localStorage.getItem("token"));
-
-
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      // You could log out the user or redirect to login
-      console.warn("Unauthorized, logging out...");
-      localStorage.removeItem("token");
-      window.location.href = "/login"; // or your login route
+// Request interceptor to add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+    return config;
+  },
+  (error) => {
     return Promise.reject(error);
   }
 );
 
+// Response interceptor to handle auth errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/auth';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;

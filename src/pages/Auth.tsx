@@ -6,71 +6,77 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Zap, ArrowRight, SkipForward } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "@/lib/api"; // Add this import
-
+import { useAuth } from "@/contexts/AuthContext";
+import api from "@/lib/api";
+import { toast } from "sonner";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate API call
-      const email = (document.getElementById("email") as HTMLInputElement).value;
-      const password = (document.getElementById("password") as HTMLInputElement).value;
+    
+    const formData = new FormData(e.target as HTMLFormElement);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
+    try {
+      const response = await api.post("/auth/login", {
+        email,
+        password,
+      });
+
+      login(response.data.access_token, response.data.user);
+      toast.success("Login successful!");
+      
+      // Check if user has a business profile
       try {
-        const res = await api.post("/auth/login", {
-          email: email,
-          password,
-        });
-localStorage.setItem("token", res.data.access_token);
-localStorage.setItem("user", JSON.stringify(res.data.user));
-
-    // setTimeout(() => {
-    //   setIsLoading(false);
-    //   navigate("/analyze");
-    // }, 1500);
-        setIsLoading(false);
-    navigate("/analyze");
-  } 
-    catch (error: any) {
-    console.error("Login failed:", error?.response?.data || error.message);
-    alert("Login failed. Please check your credentials.");
-    setIsLoading(false);
-  }
-
+        await api.get('/api/v1/business/');
+        navigate("/analyze");
+      } catch {
+        // No business profile, redirect to create one
+        navigate("/business-profile");
+      }
+    } catch (error: any) {
+      console.error("Login failed:", error?.response?.data || error.message);
+      toast.error(error?.response?.data?.detail || "Login failed. Please check your credentials.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
 
-const handleSignup = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setIsLoading(true);
+    const formData = new FormData(e.target as HTMLFormElement);
+    const username = formData.get("name") as string;
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
-  const name = (document.getElementById("name") as HTMLInputElement).value;
-  const email = (document.getElementById("email-signup") as HTMLInputElement).value;
-  const password = (document.getElementById("password-signup") as HTMLInputElement).value;
-
-  try {
-   const response = await api.post('/auth/register', {
-      username: name,
-      email: email,
-      password: password,
-    });
-    console.log('Signup successful:', response.data);
-
-    setIsLoading(false);
-    navigate("/analyze");
-  } catch (error: any) {
-    console.error("Signup failed:", error?.response?.data || error.message);
-    alert("Signup failed. Please try again.");
-    setIsLoading(false);
-  }
-};
+    try {
+      await api.post('/auth/register', {
+        username,
+        email,
+        password,
+      });
+      
+      toast.success("Account created successfully! Please login.");
+      // Switch to login tab after successful signup
+      document.querySelector('[value="login"]')?.click();
+    } catch (error: any) {
+      console.error("Signup failed:", error?.response?.data || error.message);
+      toast.error(error?.response?.data?.detail || "Signup failed. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSkip = () => {
-    navigate("/analyze");
+    navigate("/business-profile");
   };
 
   return (
@@ -86,7 +92,7 @@ const handleSignup = async (e: React.FormEvent) => {
               Blynx
             </span>
           </Link>
-          <h1 className="text-2xl font-bold mb-2">Welcome Back</h1>
+          <h1 className="text-2xl font-bold mb-2">Welcome to Blynx</h1>
           <p className="text-muted-foreground">
             Access your brand analysis dashboard
           </p>
@@ -105,7 +111,7 @@ const handleSignup = async (e: React.FormEvent) => {
               className="w-full" 
               onClick={handleSkip}
             >
-              Skip & Analyze Now <ArrowRight className="ml-2 w-4 h-4" />
+              Skip & Continue <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </CardContent>
         </Card>
@@ -131,6 +137,7 @@ const handleSignup = async (e: React.FormEvent) => {
                     <Label htmlFor="email">Email</Label>
                     <Input 
                       id="email" 
+                      name="email"
                       type="email" 
                       placeholder="Enter your email"
                       required
@@ -140,6 +147,7 @@ const handleSignup = async (e: React.FormEvent) => {
                     <Label htmlFor="password">Password</Label>
                     <Input 
                       id="password" 
+                      name="password"
                       type="password" 
                       placeholder="Enter your password"
                       required
@@ -162,6 +170,7 @@ const handleSignup = async (e: React.FormEvent) => {
                     <Label htmlFor="name">Full Name</Label>
                     <Input 
                       id="name" 
+                      name="name"
                       type="text" 
                       placeholder="Enter your full name"
                       required
@@ -171,6 +180,7 @@ const handleSignup = async (e: React.FormEvent) => {
                     <Label htmlFor="email-signup">Email</Label>
                     <Input 
                       id="email-signup" 
+                      name="email"
                       type="email" 
                       placeholder="Enter your email"
                       required
@@ -180,17 +190,10 @@ const handleSignup = async (e: React.FormEvent) => {
                     <Label htmlFor="password-signup">Password</Label>
                     <Input 
                       id="password-signup" 
+                      name="password"
                       type="password" 
                       placeholder="Create a password"
                       required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company">Company Name</Label>
-                    <Input 
-                      id="company" 
-                      type="text" 
-                      placeholder="Enter your company name"
                     />
                   </div>
                   <Button 

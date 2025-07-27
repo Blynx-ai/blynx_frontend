@@ -1,96 +1,83 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Zap, Building, Globe, Users, Target, ArrowRight, Loader2 } from "lucide-react";
+import { Zap, Target, Users, Globe, ArrowRight, Loader2, Building } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "@/lib/api"; // Add this import
-
+import { useAuth } from "@/contexts/AuthContext";
+import api from "@/lib/api";
+import { toast } from "sonner";
 
 const Analyze = () => {
-  const [formData, setFormData] = useState({
-    brandName: "",
-    industry: "",
-    targetAudience: "",
-    description: "",
-    website: "",
-    socialMedia_instagram: "",
-    socialMedia_linkedin: "",
-    socialMedia_x: "",
-    marketingGoals: []
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const [business, setBusiness] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const industries = [
-    "Technology", "Healthcare", "Finance", "E-commerce", "Fashion", 
-    "Food & Beverage", "Education", "Real Estate", "Entertainment", "Other"
-  ];
-
-  const marketingGoals = [
-    "Brand Awareness", "Lead Generation", "Customer Retention", 
-    "Market Expansion", "Product Launch", "Thought Leadership"
-  ];
-
-  const audiences = ["B2B", "B2C", "Other"];
-
-
-  const handleGoalToggle = (goal: string) => {
-    setFormData(prev => ({
-      ...prev,
-      marketingGoals: prev.marketingGoals.includes(goal)
-        ? prev.marketingGoals.filter(g => g !== goal)
-        : [...prev.marketingGoals, goal]
-    }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    
-    // Simulate API call to backend
-    // setTimeout(() => {
-    //   // Navigate to results with the form data
-    //   navigate("/results", { state: { analysisData: formData } });
-    // }, 3000);
-    try {
-  const token = localStorage.getItem("access_token"); // Adjust if you're storing it differently
-
-  const response = await api.post(
-    "https://blynx-backend.azurewebsites.net/api/v1/business/",
-    {
-      name: formData.brandName,
-      about_us: formData.description,
-      industry_type: formData.industry,
-      customer_type: formData.targetAudience,
-      landing_page_url: formData.website,
-      instagram_url: formData.socialMedia_instagram, // optionally split and validate URLs
-      linkedin_url: formData.socialMedia_linkedin,
-      x_url: formData.socialMedia_x,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchBusiness();
+    } else {
+      setIsLoading(false);
     }
-  );
+  }, [isAuthenticated]);
 
-  console.log("Business created:", response.data);
-
-  // Navigate to results after success
-  navigate("/results", { state: { analysisData: formData } });
-} catch (error) {
-  console.error("Failed to submit business data:", error.response?.data || error.message);
-} finally {
-  setIsLoading(false);
-}
-
+  const fetchBusiness = async () => {
+    try {
+      const response = await api.get('/api/v1/business/');
+      setBusiness(response.data);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        // No business found, redirect to create one
+        navigate('/business-profile');
+        return;
+      }
+      toast.error("Failed to fetch business information");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const handleAnalyze = async () => {
+    if (!business && isAuthenticated) {
+      navigate('/business-profile');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    
+    try {
+      const response = await api.post('/api/v1/agents/trigger', {});
+      
+      if (response.data.flow_id) {
+        navigate('/results', { 
+          state: { 
+            flowId: response.data.flow_id,
+            business: business
+          } 
+        });
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to start analysis");
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSkipAnalyze = () => {
+    // For users without accounts, redirect to business profile creation
+    navigate('/business-profile');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-subtle flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
@@ -106,18 +93,32 @@ const Analyze = () => {
             </span>
           </Link>
           
-          {/* <div className="flex items-center gap-3">
-            <Link to="/auth">
-              <Button variant="outline" size="sm">
-                Login
-              </Button>
-            </Link>
-          </div> */}
+          <div className="flex items-center gap-3">
+            {isAuthenticated ? (
+              <>
+                <Link to="/business-profile">
+                  <Button variant="outline" size="sm">
+                    <Building className="w-4 h-4 mr-2" />
+                    Business Profile
+                  </Button>
+                </Link>
+                <span className="text-sm text-muted-foreground">
+                  Welcome, {user?.username}
+                </span>
+              </>
+            ) : (
+              <Link to="/auth">
+                <Button variant="outline" size="sm">
+                  Login
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-12">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           {/* Hero Section */}
           <div className="text-center mb-12">
             <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-primary bg-clip-text text-transparent">
@@ -142,164 +143,117 @@ const Analyze = () => {
             </div>
           </div>
 
-          {/* Analysis Form */}
-          <Card className="shadow-brand">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="w-5 h-5 text-primary" />
-                Brand Information
-              </CardTitle>
-              <CardDescription>
-                Tell us about your brand so our AI can provide accurate insights
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="brandName">Brand Name *</Label>
-                    <Input
-                      id="brandName"
-                      placeholder="Enter your brand name"
-                      value={formData.brandName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, brandName: e.target.value }))}
-                      required
-                      className="text-lg font-medium"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="industry">Industry *</Label>
-                    <Select onValueChange={(value) => setFormData(prev => ({ ...prev, industry: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your industry" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {industries.map(industry => (
-                          <SelectItem key={industry} value={industry}>
-                            {industry}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+          {/* Business Information Card */}
+          {business ? (
+            <Card className="shadow-brand mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="w-5 h-5 text-primary" />
+                  {business.name}
+                </CardTitle>
+                <CardDescription>
+                  {business.industry_type} • {business.customer_type}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground mb-4">{business.about_us}</p>
+                <div className="grid md:grid-cols-2 gap-4 text-sm">
+                  {business.landing_page_url && (
+                    <div>
+                      <span className="font-medium">Website:</span>
+                      <a href={business.landing_page_url} target="_blank" rel="noopener noreferrer" 
+                         className="text-primary hover:underline ml-2">
+                        {business.landing_page_url}
+                      </a>
+                    </div>
+                  )}
+                  {business.instagram_url && (
+                    <div>
+                      <span className="font-medium">Instagram:</span>
+                      <a href={business.instagram_url} target="_blank" rel="noopener noreferrer" 
+                         className="text-primary hover:underline ml-2">
+                        View Profile
+                      </a>
+                    </div>
+                  )}
+                  {business.linkedin_url && (
+                    <div>
+                      <span className="font-medium">LinkedIn:</span>
+                      <a href={business.linkedin_url} target="_blank" rel="noopener noreferrer" 
+                         className="text-primary hover:underline ml-2">
+                        View Profile
+                      </a>
+                    </div>
+                  )}
+                  {business.x_url && (
+                    <div>
+                      <span className="font-medium">X (Twitter):</span>
+                      <a href={business.x_url} target="_blank" rel="noopener noreferrer" 
+                         className="text-primary hover:underline ml-2">
+                        View Profile
+                      </a>
+                    </div>
+                  )}
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Brand Description *</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Describe your brand, products, or services..."
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    rows={4}
-                    required
-                  />
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="website">Website URL</Label>
-                    <Input
-                      id="website"
-                      placeholder="https://yourbrand.com"
-                      value={formData.website}
-                      onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
-                    />
-                  </div>
-                  
-                  {/* <div className="space-y-2">
-                    <Label htmlFor="targetAudience">Target Audience</Label>
-                    <Input
-                      id="targetAudience"
-                      placeholder="e.g., Young professionals, Tech startups"
-                      value={formData.targetAudience}
-                      onChange={(e) => setFormData(prev => ({ ...prev, targetAudience: e.target.value }))}
-                    />
-                  </div> */}
-                  <div className="space-y-2">
-                  <Label htmlFor="targetAudience">Target Audience *</Label>
-                  <Select onValueChange={(value) => setFormData(prev => ({ ...prev, targetAudience: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select your audience" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {audiences.map(audience => (
-                        <SelectItem key={audience} value={audience}>
-                          {audience}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="socialMedia">Social Media Handles</Label>
-                  <Input
-                    id="socialMedia_instagram"
-                    placeholder="@yourbrand, instagram.com/company/yourbrand"
-                    value={formData.socialMedia_instagram}
-                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia_instagram: e.target.value }))}
-                  />
-                  <Input
-                    id="socialMedia_linkedin"
-                    placeholder="@yourbrand, linkedin.com/company/yourbrand"
-                    value={formData.socialMedia_linkedin}
-                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia_linkedin: e.target.value }))}
-                  />
-                  <Input
-                    id="socialMedia_x"
-                    placeholder="@yourbrand, x.com/company/yourbrand"
-                    value={formData.socialMedia_x}
-                    onChange={(e) => setFormData(prev => ({ ...prev, socialMedia_x: e.target.value }))}
-                  />
-                </div>
-
-                {/* <div className="space-y-3">
-                  <Label>Marketing Goals (Optional)</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {marketingGoals.map(goal => (
-                      <Badge
-                        key={goal}
-                        variant={formData.marketingGoals.includes(goal) ? "default" : "outline"}
-                        className="cursor-pointer hover:scale-105 transition-all"
-                        onClick={() => handleGoalToggle(goal)}
-                      >
-                        {goal}
-                      </Badge>
-                    ))}
-                  </div>
-                </div> */}
-
-                <div className="pt-6">
+                <div className="flex justify-between items-center mt-6">
+                  <Link to="/business-profile">
+                    <Button variant="outline">
+                      Edit Business Info
+                    </Button>
+                  </Link>
                   <Button 
-                    type="submit" 
+                    onClick={handleAnalyze} 
                     variant="gradient" 
-                    size="lg" 
-                    className="w-full text-lg py-6"
-                    disabled={isLoading || !formData.brandName || !formData.industry || !formData.description}
+                    size="lg"
+                    disabled={isAnalyzing}
                   >
-                    {isLoading ? (
+                    {isAnalyzing ? (
                       <>
                         <Loader2 className="mr-2 w-5 h-5 animate-spin" />
-                        Analyzing Your Brand...
+                        Starting Analysis...
                       </>
                     ) : (
                       <>
-                        Get My Blynx Score
+                        Analyze Brand
                         <ArrowRight className="ml-2 w-5 h-5" />
                       </>
                     )}
                   </Button>
                 </div>
-              </form>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="shadow-brand mb-8 border-accent/20 bg-accent/5">
+              <CardContent className="p-8 text-center">
+                <Building className="w-12 h-12 text-accent mx-auto mb-4" />
+                <h3 className="text-xl font-semibold mb-2">
+                  {isAuthenticated ? "Complete Your Business Profile" : "Get Started"}
+                </h3>
+                <p className="text-muted-foreground mb-6">
+                  {isAuthenticated 
+                    ? "Set up your business information to start the analysis"
+                    : "Create a business profile or continue without an account"
+                  }
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <Button onClick={handleSkipAnalyze} variant="gradient" size="lg">
+                    {isAuthenticated ? "Setup Business Profile" : "Continue"}
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </Button>
+                  {!isAuthenticated && (
+                    <Link to="/auth">
+                      <Button variant="outline" size="lg">
+                        Login / Register
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Info Cards */}
-          <div className="grid md:grid-cols-2 gap-6 mt-12">
+          <div className="grid md:grid-cols-2 gap-6">
             <Card className="border-accent/20 bg-accent/5">
               <CardContent className="p-6">
                 <div className="flex items-center gap-3 mb-3">

@@ -22,7 +22,7 @@ const Auth = () => {
 
       try {
         const res = await api.post("/auth/login", {
-          email,
+          email: email,
           password,
         });
 localStorage.setItem("token", res.data.access_token);
@@ -43,36 +43,7 @@ localStorage.setItem("user", JSON.stringify(res.data.user));
 
   };
 
-//   const handleSignup = async (e: React.FormEvent) => {
-//     e.preventDefault();
-//     setIsLoading(true);
-//     // Simulate API call
-//     const name = (document.getElementById("name") as HTMLInputElement).value;
-//   const email = (document.getElementById("email-signup") as HTMLInputElement).value;
-//   const password = (document.getElementById("password-signup") as HTMLInputElement).value;
-//   const company = (document.getElementById("company") as HTMLInputElement).value;
 
-//   try {
-//     const res = await api.post("/auth/register", {
-//       name,
-//       email,
-//       password,
-//       company,
-//     });
-
-//   //   setTimeout(() => {
-//   //     setIsLoading(false);
-//   //     navigate("/analyze");
-//   //   }, 1500);
-//   // };
-//   setIsLoading(false);
-//     navigate("/analyze");
-//   } catch (error: any) {
-//     console.error("Signup failed:", error?.response?.data || error.message);
-//     alert("Signup failed. Please try again.");
-//     setIsLoading(false);
-//   }
-// };
 const handleSignup = async (e: React.FormEvent) => {
   e.preventDefault();
   setIsLoading(true);

@@ -26,13 +26,15 @@ const Analyze = () => {
     try {
       const response = await api.get('/api/v1/business/');
       setBusiness(response.data);
+      console.log('Business fetched:', response.data);
     } catch (error: any) {
+      console.error('Fetch business error:', error.response?.data);
       if (error.response?.status === 404) {
-        // No business found, redirect to create one
-        navigate('/business-profile');
-        return;
+        // No business found, but don't redirect automatically
+        console.log('No business profile found');
+      } else {
+        toast.error("Failed to fetch business information");
       }
-      toast.error("Failed to fetch business information");
     } finally {
       setIsLoading(false);
     }
@@ -40,6 +42,13 @@ const Analyze = () => {
 
   const handleAnalyze = async () => {
     if (!business && isAuthenticated) {
+      toast.error("Please create a business profile first");
+      navigate('/business-profile');
+      return;
+    }
+
+    if (!business && !isAuthenticated) {
+      toast.error("Please create a business profile or login first");
       navigate('/business-profile');
       return;
     }
@@ -47,17 +56,22 @@ const Analyze = () => {
     setIsAnalyzing(true);
     
     try {
+      console.log('Starting analysis for business:', business?.name);
       const response = await api.post('/api/v1/agents/trigger', {});
       
       if (response.data.flow_id) {
+        console.log('Analysis started with flow_id:', response.data.flow_id);
         navigate('/results', { 
           state: { 
             flowId: response.data.flow_id,
             business: business
           } 
         });
+      } else {
+        throw new Error('No flow_id received from server');
       }
     } catch (error: any) {
+      console.error('Analysis trigger error:', error.response?.data);
       toast.error(error.response?.data?.detail || "Failed to start analysis");
       setIsAnalyzing(false);
     }

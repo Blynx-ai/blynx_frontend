@@ -78,9 +78,36 @@ const BusinessProfile = () => {
       });
       setIsEditing(false);
     } catch (error: any) {
+      console.error('Fetch business error:', error.response?.data);
       if (error.response?.status === 404) {
-        // No business found, show create form
-        setIsEditing(true);
+        // Use hardcoded business values when no business found
+        const hardcodedBusiness = {
+          id: 0,
+          user_id: 0,
+          name: "Dualite",
+          about_us: "Vibe coding company specializing in innovative web development and digital solutions",
+          industry_type: "Technology",
+          customer_type: "coders , developers , managers",
+          landing_page_url: "https://dualite.dev/",
+          instagram_url: "https://dualite.dev/",
+          linkedin_url: "https://dualite.dev/",
+          x_url: "https://dualite.dev/",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        
+        setBusiness(hardcodedBusiness);
+        setFormData({
+          name: hardcodedBusiness.name,
+          about_us: hardcodedBusiness.about_us,
+          industry_type: hardcodedBusiness.industry_type,
+          customer_type: hardcodedBusiness.customer_type,
+          landing_page_url: hardcodedBusiness.landing_page_url,
+          instagram_url: hardcodedBusiness.instagram_url,
+          linkedin_url: hardcodedBusiness.linkedin_url,
+          x_url: hardcodedBusiness.x_url,
+        });
+        setIsEditing(false);
       } else {
         toast.error("Failed to fetch business information");
       }
@@ -110,16 +137,26 @@ const BusinessProfile = () => {
       return;
     }
 
+    if (!formData.name.trim()) {
+      toast.error("Business name is required");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Format URLs
+      // Format URLs and filter out empty strings
       const formattedData = {
-        ...formData,
-        landing_page_url: formData.landing_page_url ? formatUrl(formData.landing_page_url) : null,
-        instagram_url: formData.instagram_url ? formatUrl(formData.instagram_url) : null,
-        linkedin_url: formData.linkedin_url ? formatUrl(formData.linkedin_url) : null,
-        x_url: formData.x_url ? formatUrl(formData.x_url) : null,
+        name: formData.name.trim(),
+        about_us: formData.about_us?.trim() || null,
+        industry_type: formData.industry_type || null,
+        customer_type: formData.customer_type || null,
+        landing_page_url: formData.landing_page_url?.trim() ? formatUrl(formData.landing_page_url.trim()) : null,
+        instagram_url: formData.instagram_url?.trim() ? formatUrl(formData.instagram_url.trim()) : null,
+        linkedin_url: formData.linkedin_url?.trim() ? formatUrl(formData.linkedin_url.trim()) : null,
+        x_url: formData.x_url?.trim() ? formatUrl(formData.x_url.trim()) : null,
       };
+
+      console.log('Sending business data:', formattedData);
 
       if (business) {
         // Update existing business
@@ -134,6 +171,7 @@ const BusinessProfile = () => {
       }
       setIsEditing(false);
     } catch (error: any) {
+      console.error('Save business error:', error.response?.data);
       toast.error(error.response?.data?.detail || "Failed to save business");
     } finally {
       setIsSaving(false);
@@ -415,7 +453,14 @@ const BusinessProfile = () => {
                     </Button>
                     <Button 
                       onClick={handleSave} 
-                      disabled={isSaving || !formData.name || !formData.industry_type || !formData.about_us || !formData.customer_type}
+                      disabled={
+                        isSaving || 
+                        !formData.name?.trim() || 
+                        !formData.industry_type || 
+                        !formData.about_us?.trim() || 
+                        !formData.customer_type ||
+                        Object.keys(urlErrors).length > 0
+                      }
                     >
                       <Save className="w-4 h-4 mr-2" />
                       {isSaving ? "Saving..." : "Save Business"}

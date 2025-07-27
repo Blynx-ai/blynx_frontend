@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { 
   Zap, Download, Share2, AlertTriangle, Award, Star, TrendingUp, Target, 
   Activity, CheckCircle, Clock, Users, Globe, Building, ExternalLink,
-  Loader2, BarChart3, Lightbulb, ArrowRight, RefreshCw, Eye
+  Loader2, BarChart3, Lightbulb, ArrowRight, RefreshCw, Eye, XCircle
 } from "lucide-react";
 import html2pdf from 'html2pdf.js';
 import { toast } from "sonner";
@@ -30,16 +30,37 @@ interface AnalysisResult {
   flow_id: string;
   status: string;
   blynx_score?: {
-    overall_score: number;
-    market_presence: number;
-    digital_footprint: number;
-    brand_coherence: number;
-    audience_alignment: number;
+    final_blynx_score: number;
+    accuracy_weighted_score: number;
+    impact_weighted_score: number;
+    language_weighted_score: number;
+    brand_weighted_score: number;
+    reputation_weighted_score: number;
+    red_flag_penalty: number;
+    grade: string;
+    performance_category: string;
+    score_breakdown?: {
+      calculation: string;
+      details: string;
+    };
+    news_impact_factor?: string;
   };
   feedback?: {
+    executive_summary: string;
     strengths: string[];
     areas_for_improvement: string[];
-    recommendations: string[];
+    critical_issues: string[];
+    brand_recommendations: string[];
+    reputation_recommendations: string[];
+    content_strategy_suggestions: string[];
+    news_insights: string[];
+    competitive_advantages: string[];
+    risk_mitigation: string[];
+    actionable_next_steps: string[];
+    timeline_recommendations: string[];
+    resource_requirements: string[];
+    success_metrics: string[];
+    overall_assessment: string;
   };
   analysis_details?: any;
   created_at: string;
@@ -151,7 +172,8 @@ const Results = () => {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isFetchingResults, setIsFetchingResults] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
-  const [manualResultsAvailable, setManualResultsAvailable] = useState(false);
+  const [showManualButton, setShowManualButton] = useState(false);
+  const [analysisStartTime, setAnalysisStartTime] = useState<Date>(new Date());
   const reportRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -166,6 +188,7 @@ const Results = () => {
     if (stateFlowId) {
       setFlowId(stateFlowId);
       setAnalysisPhase('running');
+      setAnalysisStartTime(new Date());
     }
     
     if (stateBusiness) {
@@ -198,13 +221,13 @@ const Results = () => {
 
     connectToWebSocket(flowId);
 
-    // Check for manual results availability after some time
-    const checkResultsTimer = setTimeout(() => {
-      setManualResultsAvailable(true);
-    }, 30000); // Show manual button after 30 seconds
+    // Show manual button after 30 seconds
+    const manualButtonTimer = setTimeout(() => {
+      setShowManualButton(true);
+    }, 30000);
 
     return () => {
-      clearTimeout(checkResultsTimer);
+      clearTimeout(manualButtonTimer);
     };
   }, [flowId]);
 
@@ -223,6 +246,7 @@ const Results = () => {
       if (response.data.flow_id) {
         setFlowId(response.data.flow_id);
         setAnalysisPhase('running');
+        setAnalysisStartTime(new Date());
         
         // Also fetch business info if not already available
         if (!business) {
@@ -308,21 +332,20 @@ const Results = () => {
             log.message?.includes("Enhanced agent flow completed successfully") ||
             log.message?.includes("Final result saved for flow") ||
             log.message?.includes("Flow completed") ||
-            log.agent?.toLowerCase().includes("reputation") // Since reputation is typically the last step
+            (log.agent?.toLowerCase().includes("reputation") && log.message?.includes("completed"))
           );
 
           if (completedLog) {
-            console.log("Flow completed, fetching results...");
-            setManualResultsAvailable(true);
-            // Don't close WebSocket immediately, wait a bit then fetch results
-            setTimeout(() => fetchFinalResult(id), 2000);
+            console.log("Flow completed, enabling manual results fetch...");
+            setShowManualButton(true);
+            toast.info("Analysis completed! Click 'View Results' to see your report.");
           }
         } else if (data.type === "status") {
           console.log("Status update:", data.data);
           if (data.data.final || data.data.status === "completed") {
             console.log("Flow completed via status message");
-            setManualResultsAvailable(true);
-            setTimeout(() => fetchFinalResult(id), 1000);
+            setShowManualButton(true);
+            toast.info("Analysis completed! Click 'View Results' to see your report.");
           }
         }
       } catch (error) {
@@ -342,31 +365,26 @@ const Results = () => {
       setIsConnecting(false);
       
       // Only attempt reconnection if it wasn't a manual close and we're still in running phase
-      if (event.code !== 1000 && analysisPhase === 'running' && connectionAttempts < 5) {
+      if (event.code !== 1000 && (analysisPhase === 'running' || analysisPhase === 'starting') && connectionAttempts < 10) {
         const newAttempts = connectionAttempts + 1;
         setConnectionAttempts(newAttempts);
-        console.log(`Attempting to reconnect (${newAttempts}/5)...`);
+        console.log(`Attempting to reconnect (${newAttempts}/10)...`);
         
         reconnectTimeoutRef.current = setTimeout(() => {
-          if (analysisPhase === 'running') {
+          if (analysisPhase === 'running' || analysisPhase === 'starting') {
             connectToWebSocket(id);
           }
         }, Math.min(1000 * Math.pow(2, newAttempts), 10000)); // Exponential backoff, max 10s
-      } else if (connectionAttempts >= 5) {
-        toast.error("Connection lost. Use the manual refresh button to check for results.");
-        setManualResultsAvailable(true);
       }
     };
   };
 
-  const fetchFinalResult = async (id: string, isManual: boolean = false) => {
+  const fetchFinalResult = async (id: string, isManual: boolean = true) => {
     if (isFetchingResults) return;
     
     setIsFetchingResults(true);
     
-    if (isManual) {
-      toast.info("Checking for results...");
-    }
+    toast.info("Checking for results...");
 
     try {
       const headers: HeadersInit = {
@@ -384,42 +402,29 @@ const Results = () => {
       if (response.ok) {
         const resultData = await response.json();
         console.log("Final Analysis Result:", resultData);
-        setAnalysisResult(resultData);
-        setAnalysisPhase('completed');
-        toast.success("Analysis completed!");
         
-        // Close WebSocket now that we have results
-        if (wsRef.current) {
-          wsRef.current.close(1000, "Analysis completed");
-          wsRef.current = null;
-        }
-      } else {
-        console.error("Failed to fetch results:", response.status);
-        if (isManual) {
-          toast.error("Results not ready yet. Please try again in a moment.");
+        // Only proceed if we have valid results with scores
+        if (resultData && (resultData.blynx_score || resultData.status === 'completed')) {
+          setAnalysisResult(resultData);
+          setAnalysisPhase('completed');
+          toast.success("Analysis completed! Your results are ready.");
+          
+          // Close WebSocket now that we have results
+          if (wsRef.current) {
+            wsRef.current.close(1000, "Analysis completed");
+            wsRef.current = null;
+          }
         } else {
-          // Show mock results after some time for automatic fetch
-          setTimeout(() => {
-            if (analysisPhase !== 'completed') {
-              setAnalysisPhase('completed');
-              generateMockResults();
-            }
-          }, 5000);
+          toast.error("Results not ready yet. Please try again in a moment.");
         }
+      } else if (response.status === 404) {
+        toast.error("Results not found. The analysis may still be processing.");
+      } else {
+        toast.error(`Failed to fetch results (${response.status}). Please try again.`);
       }
     } catch (err) {
       console.error("Error fetching final result:", err);
-      if (isManual) {
-        toast.error("Failed to fetch results. Please try again.");
-      } else {
-        // Show mock results after some time for automatic fetch
-        setTimeout(() => {
-          if (analysisPhase !== 'completed') {
-            setAnalysisPhase('completed');
-            generateMockResults();
-          }
-        }, 5000);
-      }
+      toast.error("Failed to connect to server. Please check your connection and try again.");
     } finally {
       setIsFetchingResults(false);
     }
@@ -429,41 +434,6 @@ const Results = () => {
     if (flowId) {
       fetchFinalResult(flowId, true);
     }
-  };
-
-  const generateMockResults = () => {
-    // Generate mock results if real results are not available
-    const mockResult: AnalysisResult = {
-      flow_id: flowId || 'mock',
-      status: 'completed',
-      blynx_score: {
-        overall_score: Math.floor(Math.random() * 30) + 65,
-        market_presence: Math.floor(Math.random() * 25) + 70,
-        digital_footprint: Math.floor(Math.random() * 20) + 75,
-        brand_coherence: Math.floor(Math.random() * 35) + 60,
-        audience_alignment: Math.floor(Math.random() * 25) + 70,
-      },
-      feedback: {
-        strengths: [
-          "Strong brand name recognition potential",
-          `Clear industry positioning in ${business?.industry_type || 'your industry'}`,
-          "Professional web presence established"
-        ],
-        areas_for_improvement: [
-          "Enhance social media presence",
-          "Strengthen brand storytelling",
-          "Expand digital marketing reach"
-        ],
-        recommendations: [
-          "Develop consistent content themes that align with your brand values",
-          "Improve SEO and online visibility across key platforms",
-          `Create targeted campaigns for your ${business?.customer_type || 'target audience'}`
-        ]
-      },
-      created_at: new Date().toISOString()
-    };
-    setAnalysisResult(mockResult);
-    toast.success("Analysis completed with sample results!");
   };
 
   const getScoreColor = (score: number) => {
@@ -493,8 +463,39 @@ const Results = () => {
     }
   };
 
+  const getAnalysisStatusInfo = () => {
+    const runtime = Math.floor((new Date().getTime() - analysisStartTime.getTime()) / 1000);
+    const minutes = Math.floor(runtime / 60);
+    const seconds = runtime % 60;
+    
+    switch (analysisPhase) {
+      case 'starting':
+        return {
+          title: 'Starting Analysis...',
+          description: 'Initializing AI agents and preparing your analysis',
+          color: 'text-blue-600',
+          icon: <Loader2 className="w-10 h-10 text-white animate-spin" />
+        };
+      case 'running':
+        return {
+          title: `Analyzing ${business?.name || 'Your Brand'}...`,
+          description: `Running for ${minutes}m ${seconds}s - Our AI agents are processing your brand`,
+          color: 'text-primary',
+          icon: <Loader2 className="w-10 h-10 text-white animate-spin" />
+        };
+      default:
+        return {
+          title: 'Processing...',
+          description: 'Please wait while we process your request',
+          color: 'text-gray-600',
+          icon: <Clock className="w-10 h-10 text-white" />
+        };
+    }
+  };
+
   const latestLog = logs[logs.length - 1];
   const progress = getProgressPercentage(logs);
+  const statusInfo = getAnalysisStatusInfo();
 
   // Render based on analysis phase
   if (analysisPhase === 'error') {
@@ -502,7 +503,7 @@ const Results = () => {
       <div className="min-h-screen bg-gradient-subtle flex items-center justify-center">
         <Card className="max-w-md mx-auto">
           <CardContent className="p-8 text-center">
-            <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+            <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2">No Analysis Session Found</h2>
             <p className="text-muted-foreground mb-4">
               Please start a new brand analysis.
@@ -532,9 +533,9 @@ const Results = () => {
           
           <div className="flex items-center gap-3">
             {/* Connection Status */}
-            {analysisPhase === 'running' && (
+            {(analysisPhase === 'running') && (
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
                 <span className="text-sm text-muted-foreground">
                   {wsConnected ? 'Connected' : 'Disconnected'}
                 </span>
@@ -542,9 +543,9 @@ const Results = () => {
             )}
 
             {/* Manual Results Button */}
-            {manualResultsAvailable && analysisPhase === 'running' && (
+            {showManualButton && analysisPhase === 'running' && (
               <Button 
-                variant="outline" 
+                variant="default"
                 size="sm" 
                 onClick={handleManualFetchResults}
                 disabled={isFetchingResults}
@@ -554,7 +555,7 @@ const Results = () => {
                 ) : (
                   <Eye className="w-4 h-4 mr-2" />
                 )}
-                Check Results
+                View Results
               </Button>
             )}
 
@@ -583,7 +584,7 @@ const Results = () => {
               <div className="flex items-center justify-center mb-6">
                 <div className="relative">
                   <div className="w-20 h-20 bg-gradient-primary rounded-full flex items-center justify-center shadow-brand">
-                    <Loader2 className="w-10 h-10 text-white animate-spin" />
+                    {statusInfo.icon}
                   </div>
                   {isConnecting ? (
                     <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center">
@@ -594,19 +595,19 @@ const Results = () => {
                       <Activity className="w-3 h-3 text-white" />
                     </div>
                   ) : (
-                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-                      <AlertTriangle className="w-3 h-3 text-white" />
+                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center">
+                      <RefreshCw className="w-3 h-3 text-white" />
                     </div>
                   )}
                 </div>
               </div>
               
               <h1 className="text-3xl md:text-4xl font-bold mb-4">
-                {analysisPhase === 'starting' ? 'Starting Analysis...' : `Analyzing ${business?.name || 'Your Brand'}...`}
+                {statusInfo.title}
               </h1>
               
               <p className="text-lg text-muted-foreground mb-4">
-                Our AI agents are processing your brand across multiple dimensions
+                {statusInfo.description}
               </p>
               
               {/* Progress Bar */}
@@ -636,16 +637,17 @@ const Results = () => {
               {!wsConnected && !isConnecting && connectionAttempts > 0 && (
                 <div className="mt-4 flex items-center justify-center gap-2 text-sm text-yellow-600">
                   <RefreshCw className="w-4 h-4" />
-                  <span>Reconnecting... (attempt {connectionAttempts}/5)</span>
+                  <span>Reconnecting... (attempt {connectionAttempts}/10)</span>
                 </div>
               )}
             </div>
 
             {/* Manual Results Button - Prominent */}
-            {manualResultsAvailable && (
+            {showManualButton && (
               <Card className="mb-6 border-2 border-primary/50 bg-primary/5">
                 <CardContent className="p-6 text-center">
-                  <h3 className="font-semibold mb-2">Analysis May Be Complete</h3>
+                  <CheckCircle className="w-8 h-8 text-primary mx-auto mb-3" />
+                  <h3 className="font-semibold mb-2">Check for Results</h3>
                   <p className="text-muted-foreground mb-4">
                     Click below to check if your results are ready
                   </p>
@@ -797,229 +799,388 @@ const Results = () => {
             </Card>
           </div>
         ) : (
-          // Results Display
-          <div className="max-w-6xl mx-auto" ref={reportRef}>
-            {/* Header */}
-            <div className="text-center mb-12">
-              <h1 className="text-4xl md:text-5xl font-bold mb-4">
-                <span className="bg-gradient-primary bg-clip-text text-transparent">
-                  {business?.name || 'Your Brand'}
-                </span>{" "}
-                Analysis Complete
-              </h1>
-              <p className="text-xl text-muted-foreground">
-                Here's your comprehensive brand presence report
-              </p>
-            </div>
+          // Results Display - Only shown when real data is available
+          analysisResult && (
+            <div className="max-w-6xl mx-auto" ref={reportRef}>
+              {/* Header */}
+              <div className="text-center mb-12">
+                <h1 className="text-4xl md:text-5xl font-bold mb-4">
+                  <span className="bg-gradient-primary bg-clip-text text-transparent">
+                    {business?.name || 'Your Brand'}
+                  </span>{" "}
+                  Analysis Complete
+                </h1>
+                <p className="text-xl text-muted-foreground">
+                  Here's your comprehensive brand presence report
+                </p>
+              </div>
 
-            {/* Results content */}
-            {analysisResult && (
-              <>
-                {/* Blynx Score Card */}
-                <Card className="mb-8 shadow-brand border-2 border-primary/20">
-                  <CardContent className="p-8">
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-3 mb-4">
-                        {(() => {
-                          const scoreLevel = getScoreLevel(analysisResult.blynx_score?.overall_score || 75);
-                          return (
-                            <>
-                              <scoreLevel.icon className={`w-8 h-8 ${getScoreColor(analysisResult.blynx_score?.overall_score || 75)}`} />
-                              <h2 className="text-2xl font-bold">Your Blynx Score</h2>
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div className={`text-6xl font-bold mb-2 ${getScoreColor(analysisResult.blynx_score?.overall_score || 75)}`}>
-                        {analysisResult.blynx_score?.overall_score || 75}
-                      </div>
-                      <Badge variant="outline" className="text-lg px-4 py-1 mb-4">
-                        {getScoreLevel(analysisResult.blynx_score?.overall_score || 75).level}
+              {/* Blynx Score Card */}
+              <Card className="mb-8 shadow-brand border-2 border-primary/20">
+                <CardContent className="p-8">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-3 mb-4">
+                      {(() => {
+                        const scoreLevel = getScoreLevel(analysisResult.blynx_score?.final_blynx_score || 0);
+                        return (
+                          <>
+                            <scoreLevel.icon className={`w-8 h-8 ${getScoreColor(analysisResult.blynx_score?.final_blynx_score || 0)}`} />
+                            <h2 className="text-2xl font-bold">Your Blynx Score</h2>
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div className={`text-6xl font-bold mb-2 ${getScoreColor(analysisResult.blynx_score?.final_blynx_score || 0)}`}>
+                      {Math.round(analysisResult.blynx_score?.final_blynx_score || 0)}
+                    </div>
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      <Badge variant="outline" className="text-lg px-4 py-1">
+                        {analysisResult.blynx_score?.grade || 'N/A'} - {analysisResult.blynx_score?.performance_category || 'Unknown'}
                       </Badge>
-                      <p className="text-muted-foreground max-w-2xl mx-auto">
-                        {(() => {
-                          const score = analysisResult.blynx_score?.overall_score || 75;
-                          if (score >= 85) return "Outstanding! Your brand has excellent market presence and strong positioning.";
-                          if (score >= 70) return "Great job! Your brand shows strong potential with room for strategic improvements.";
-                          if (score >= 55) return "Good foundation! Focus on the recommendations below to enhance your brand presence.";
-                          return "Significant opportunities ahead! Our insights will help transform your brand presence.";
-                        })()}
-                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {/* Detailed Metrics */}
-                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Globe className="w-4 h-4" />
-                        Market Presence
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold mb-2">{analysisResult.blynx_score?.market_presence || 75}%</div>
-                      <Progress value={analysisResult.blynx_score?.market_presence || 75} className="mb-2" />
-                      <p className="text-xs text-muted-foreground">
-                        Brand visibility and recognition
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4" />
-                        Digital Footprint
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold mb-2">{analysisResult.blynx_score?.digital_footprint || 80}%</div>
-                      <Progress value={analysisResult.blynx_score?.digital_footprint || 80} className="mb-2" />
-                      <p className="text-xs text-muted-foreground">
-                        Online presence strength
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Target className="w-4 h-4" />
-                        Brand Coherence
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold mb-2">{analysisResult.blynx_score?.brand_coherence || 70}%</div>
-                      <Progress value={analysisResult.blynx_score?.brand_coherence || 70} className="mb-2" />
-                      <p className="text-xs text-muted-foreground">
-                        Message consistency
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        Audience Alignment
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold mb-2">{analysisResult.blynx_score?.audience_alignment || 78}%</div>
-                      <Progress value={analysisResult.blynx_score?.audience_alignment || 78} className="mb-2" />
-                      <p className="text-xs text-muted-foreground">
-                        Target market fit
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Insights and Recommendations */}
-                <div className="grid lg:grid-cols-2 gap-8 mb-8">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Lightbulb className="w-5 h-5 text-accent" />
-                        Key Insights
-                      </CardTitle>
-                      <CardDescription>
-                        AI-generated insights about your brand
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg">
-                        <h4 className="font-semibold text-green-800 dark:text-green-400 mb-2">Strengths</h4>
-                        <ul className="text-sm text-green-700 dark:text-green-300 space-y-1">
-                          {analysisResult.feedback?.strengths?.map((strength, index) => (
-                            <li key={index}>• {strength}</li>
-                          )) || [
-                            <li key="1">• Strong brand name recognition potential</li>,
-                            <li key="2">• Clear industry positioning in {business?.industry_type}</li>,
-                            <li key="3">• Professional web presence established</li>
-                          ]}
-                        </ul>
-                      </div>
-                      
-                      <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg">
-                        <h4 className="font-semibold text-yellow-800 dark:text-yellow-400 mb-2">Opportunities</h4>
-                        <ul className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
-                          {analysisResult.feedback?.areas_for_improvement?.map((area, index) => (
-                            <li key={index}>• {area}</li>
-                          )) || [
-                            <li key="1">• Enhance social media presence</li>,
-                            <li key="2">• Strengthen brand storytelling</li>,
-                            <li key="3">• Expand digital marketing reach</li>
-                          ]}
-                        </ul>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <TrendingUp className="w-5 h-5 text-primary" />
-                        Recommendations
-                      </CardTitle>
-                      <CardDescription>
-                        Actionable steps to improve your Blynx Score
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {analysisResult.feedback?.recommendations?.map((rec, index) => (
-                        <div key={index} className="border-l-4 border-primary pl-4">
-                          <p className="text-sm text-muted-foreground">{rec}</p>
-                        </div>
-                      )) || [
-                        <div key="1" className="border-l-4 border-primary pl-4">
-                          <h4 className="font-semibold mb-1">Content Strategy</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Develop consistent content themes that align with your brand values
-                          </p>
-                        </div>,
-                        <div key="2" className="border-l-4 border-accent pl-4">
-                          <h4 className="font-semibold mb-1">Digital Optimization</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Improve SEO and online visibility across key platforms
-                          </p>
-                        </div>,
-                        <div key="3" className="border-l-4 border-primary pl-4">
-                          <h4 className="font-semibold mb-1">Audience Engagement</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Create targeted campaigns for your {business?.customer_type || "target audience"}
-                          </p>
-                        </div>
-                      ]}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Call to Action */}
-                <Card className="bg-gradient-primary text-white">
-                  <CardContent className="p-8 text-center">
-                    <h3 className="text-2xl font-bold mb-4">
-                      Ready to Improve Your Blynx Score?
-                    </h3>
-                    <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-                      Get personalized guidance and track your progress with our premium analysis tools.
+                    <p className="text-muted-foreground max-w-2xl mx-auto mb-4">
+                      {(() => {
+                        const score = analysisResult.blynx_score?.final_blynx_score || 0;
+                        if (score >= 85) return "Outstanding! Your brand has excellent market presence and strong positioning.";
+                        if (score >= 70) return "Great job! Your brand shows strong potential with room for strategic improvements.";
+                        if (score >= 55) return "Good foundation! Focus on the recommendations below to enhance your brand presence.";
+                        return "Significant opportunities ahead! Our insights will help transform your brand presence.";
+                      })()}
                     </p>
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                      <Link to="/analyze">
-                        <Button variant="secondary" size="lg">
-                          Analyze Another Brand
-                        </Button>
-                      </Link>
-                      <Button variant="accent" size="lg">
-                        Get Premium Insights <ArrowRight className="ml-2 w-4 h-4" />
-                      </Button>
+                    
+                    {/* Executive Summary */}
+                    {analysisResult.feedback?.executive_summary && (
+                      <div className="mt-6 p-4 bg-muted/50 rounded-lg">
+                        <h4 className="font-semibold mb-2">Executive Summary</h4>
+                        <p className="text-sm text-muted-foreground text-left">
+                          {analysisResult.feedback.executive_summary}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Score Breakdown */}
+              {analysisResult.blynx_score?.score_breakdown && (
+                <Card className="mb-8 shadow-brand">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-primary" />
+                      Score Breakdown
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                        <h4 className="font-semibold text-blue-800 dark:text-blue-400 mb-2">Calculation Formula</h4>
+                        <p className="text-sm text-blue-700 dark:text-blue-300">
+                          {analysisResult.blynx_score.score_breakdown.calculation}
+                        </p>
+                      </div>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-950/20 rounded-lg">
+                        <h4 className="font-semibold text-gray-800 dark:text-gray-400 mb-2">Detailed Calculation</h4>
+                        <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">
+                          {analysisResult.blynx_score.score_breakdown.details}
+                        </pre>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              </>
-            )}
-          </div>
+              )}
+
+              {/* Detailed Metrics */}
+              <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Target className="w-4 h-4" />
+                      Accuracy
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-2">{Math.round(analysisResult.blynx_score?.accuracy_weighted_score || 0)}</div>
+                    <Progress value={((analysisResult.blynx_score?.accuracy_weighted_score || 0) / 25) * 100} className="mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      Factual accuracy & consistency
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Impact
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-2">{Math.round(analysisResult.blynx_score?.impact_weighted_score || 0)}</div>
+                    <Progress value={((analysisResult.blynx_score?.impact_weighted_score || 0) / 20) * 100} className="mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      Market influence & effectiveness
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Globe className="w-4 h-4" />
+                      Language
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-2">{Math.round(analysisResult.blynx_score?.language_weighted_score || 0)}</div>
+                    <Progress value={((analysisResult.blynx_score?.language_weighted_score || 0) / 15) * 100} className="mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      Communication quality
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Building className="w-4 h-4" />
+                      Brand
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-2">{Math.round(analysisResult.blynx_score?.brand_weighted_score || 0)}</div>
+                    <Progress value={((analysisResult.blynx_score?.brand_weighted_score || 0) / 15) * 100} className="mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      Brand consistency
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Reputation
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-2">{Math.round(analysisResult.blynx_score?.reputation_weighted_score || 0)}</div>
+                    <Progress value={((analysisResult.blynx_score?.reputation_weighted_score || 0) / 15) * 100} className="mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      Public perception
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Red Flag Penalty */}
+              {analysisResult.blynx_score?.red_flag_penalty && analysisResult.blynx_score.red_flag_penalty > 0 && (
+                <Card className="mb-8 border-red-200 bg-red-50 dark:bg-red-950/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-red-800 dark:text-red-400">
+                      <AlertTriangle className="w-5 h-5" />
+                      Risk Factors Identified
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-red-600 mb-2">
+                      -{Math.round(analysisResult.blynx_score.red_flag_penalty * 0.1)} points penalty
+                    </div>
+                    <p className="text-sm text-red-700 dark:text-red-300">
+                      Risk score: {Math.round(analysisResult.blynx_score.red_flag_penalty)}/100
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Critical Issues */}
+              {analysisResult.feedback?.critical_issues && analysisResult.feedback.critical_issues.length > 0 && (
+                <Card className="mb-8 border-red-200 bg-red-50 dark:bg-red-950/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-red-800 dark:text-red-400">
+                      <XCircle className="w-5 h-5" />
+                      Critical Issues
+                    </CardTitle>
+                    <CardDescription>
+                      Issues that require immediate attention
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {analysisResult.feedback.critical_issues.map((issue, index) => (
+                      <div key={index} className="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg border-l-4 border-red-500">
+                        <p className="text-sm text-red-800 dark:text-red-200">{issue}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Insights and Recommendations */}
+              <div className="grid lg:grid-cols-2 gap-8 mb-8">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Lightbulb className="w-5 h-5 text-accent" />
+                      Strengths & Opportunities
+                    </CardTitle>
+                    <CardDescription>
+                      What's working well and areas for growth
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                      <h4 className="font-semibold text-green-800 dark:text-green-400 mb-2">Strengths</h4>
+                      <ul className="text-sm text-green-700 dark:text-green-300 space-y-1">
+                        {analysisResult.feedback?.strengths?.slice(0, 5).map((strength, index) => (
+                          <li key={index}>• {strength}</li>
+                        )) || [<li key="none">• No specific strengths identified</li>]}
+                      </ul>
+                    </div>
+                    
+                    <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg">
+                      <h4 className="font-semibold text-yellow-800 dark:text-yellow-400 mb-2">Areas for Improvement</h4>
+                      <ul className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
+                        {analysisResult.feedback?.areas_for_improvement?.slice(0, 5).map((area, index) => (
+                          <li key={index}>• {area}</li>
+                        )) || [<li key="none">• No specific areas identified</li>]}
+                      </ul>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-primary" />
+                      Action Items
+                    </CardTitle>
+                    <CardDescription>
+                      Immediate next steps to improve your score
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {analysisResult.feedback?.actionable_next_steps?.slice(0, 6).map((step, index) => (
+                      <div key={index} className="border-l-4 border-primary pl-4">
+                        <p className="text-sm text-muted-foreground">{step}</p>
+                      </div>
+                    )) || [
+                      <div key="none" className="border-l-4 border-gray-300 pl-4">
+                        <p className="text-sm text-muted-foreground">No specific recommendations available</p>
+                      </div>
+                    ]}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Detailed Recommendations Tabs */}
+              <Card className="mb-8">
+                <CardHeader>
+                  <CardTitle>Detailed Analysis & Recommendations</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="brand" className="w-full">
+                    <TabsList className="grid w-full grid-cols-4">
+                      <TabsTrigger value="brand">Brand</TabsTrigger>
+                      <TabsTrigger value="reputation">Reputation</TabsTrigger>
+                      <TabsTrigger value="competitive">Competitive</TabsTrigger>
+                      <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="brand" className="space-y-4">
+                      <h4 className="font-semibold">Brand Recommendations</h4>
+                      <ul className="space-y-2">
+                        {analysisResult.feedback?.brand_recommendations?.map((rec, index) => (
+                          <li key={index} className="text-sm p-3 bg-muted/30 rounded-lg">• {rec}</li>
+                        )) || [<li key="none" className="text-sm text-muted-foreground">No brand recommendations available</li>]}
+                      </ul>
+                    </TabsContent>
+                    
+                    <TabsContent value="reputation" className="space-y-4">
+                      <h4 className="font-semibold">Reputation Management</h4>
+                      <ul className="space-y-2">
+                        {analysisResult.feedback?.reputation_recommendations?.map((rec, index) => (
+                          <li key={index} className="text-sm p-3 bg-muted/30 rounded-lg">• {rec}</li>
+                        )) || [<li key="none" className="text-sm text-muted-foreground">No reputation recommendations available</li>]}
+                      </ul>
+                    </TabsContent>
+                    
+                    <TabsContent value="competitive" className="space-y-4">
+                      <h4 className="font-semibold">Competitive Advantages</h4>
+                      <ul className="space-y-2">
+                        {analysisResult.feedback?.competitive_advantages?.map((advantage, index) => (
+                          <li key={index} className="text-sm p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">• {advantage}</li>
+                        )) || [<li key="none" className="text-sm text-muted-foreground">No competitive advantages identified</li>]}
+                      </ul>
+                    </TabsContent>
+                    
+                    <TabsContent value="timeline" className="space-y-4">
+                      <h4 className="font-semibold">Implementation Timeline</h4>
+                      <ul className="space-y-2">
+                        {analysisResult.feedback?.timeline_recommendations?.map((timeline, index) => (
+                          <li key={index} className="text-sm p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">• {timeline}</li>
+                        )) || [<li key="none" className="text-sm text-muted-foreground">No timeline recommendations available</li>]}
+                      </ul>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+
+              {/* News Impact Factor */}
+              {analysisResult.blynx_score?.news_impact_factor && (
+                <Card className="mb-8 border-indigo-200 bg-indigo-50 dark:bg-indigo-950/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-indigo-800 dark:text-indigo-400">
+                      <Globe className="w-5 h-5" />
+                      News Impact Analysis
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-indigo-700 dark:text-indigo-300">
+                      {analysisResult.blynx_score.news_impact_factor}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Overall Assessment */}
+              {analysisResult.feedback?.overall_assessment && (
+                <Card className="mb-8">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-primary" />
+                      Overall Assessment
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground leading-relaxed">
+                      {analysisResult.feedback.overall_assessment}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Call to Action */}
+              <Card className="bg-gradient-primary text-white">
+                <CardContent className="p-8 text-center">
+                  <h3 className="text-2xl font-bold mb-4">
+                    Ready to Improve Your Blynx Score?
+                  </h3>
+                  <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
+                    Get personalized guidance and track your progress with our premium analysis tools.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                    <Link to="/analyze">
+                      <Button variant="secondary" size="lg">
+                        Analyze Another Brand
+                      </Button>
+                    </Link>
+                    <Button variant="accent" size="lg">
+                      Get Premium Insights <ArrowRight className="ml-2 w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )
         )}
       </div>
     </div>

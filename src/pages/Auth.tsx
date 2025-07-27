@@ -34,9 +34,11 @@ const Auth = () => {
       
       // Check if user has a business profile
       try {
-        await api.get('/api/v1/business/');
+        const businessResponse = await api.get('/api/v1/business/');
+        console.log('Business found, redirecting to analyze');
         navigate("/analyze");
-      } catch {
+      } catch (businessError: any) {
+        console.log('No business profile found, redirecting to business-profile');
         // No business profile, redirect to create one
         navigate("/business-profile");
       }

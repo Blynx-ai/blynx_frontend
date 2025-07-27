@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import logo from "@/assets/logo_blynx.svg"; // or logo.svg
+import logo from "@/assets/logo_blynx.png"; // or logo.svg
 
 
 const Navbar = () => {
@@ -15,6 +15,7 @@ const Navbar = () => {
           <div className="p-2 bg-gradient-primary rounded-lg shadow-brand">
             <Zap className="w-5 h-5 text-white" />
           </div>
+          {/* <img src={logo} alt="Blynx Logo" className="w-8 h-8" /> */}
           <span className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             Blynx
           </span>

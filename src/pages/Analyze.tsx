@@ -36,6 +36,9 @@ const Analyze = () => {
     "Market Expansion", "Product Launch", "Thought Leadership"
   ];
 
+  const audiences = ["B2B", "B2C", "Other"];
+
+
   const handleGoalToggle = (goal: string) => {
     setFormData(prev => ({
       ...prev,
@@ -103,13 +106,13 @@ const Analyze = () => {
             </span>
           </Link>
           
-          <div className="flex items-center gap-3">
+          {/* <div className="flex items-center gap-3">
             <Link to="/auth">
               <Button variant="outline" size="sm">
                 Login
               </Button>
             </Link>
-          </div>
+          </div> */}
         </div>
       </div>
 
@@ -205,7 +208,7 @@ const Analyze = () => {
                     />
                   </div>
                   
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <Label htmlFor="targetAudience">Target Audience</Label>
                     <Input
                       id="targetAudience"
@@ -213,7 +216,23 @@ const Analyze = () => {
                       value={formData.targetAudience}
                       onChange={(e) => setFormData(prev => ({ ...prev, targetAudience: e.target.value }))}
                     />
-                  </div>
+                  </div> */}
+                  <div className="space-y-2">
+                  <Label htmlFor="targetAudience">Target Audience *</Label>
+                  <Select onValueChange={(value) => setFormData(prev => ({ ...prev, targetAudience: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your audience" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {audiences.map(audience => (
+                        <SelectItem key={audience} value={audience}>
+                          {audience}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 </div>
 
                 <div className="space-y-2">
@@ -238,7 +257,7 @@ const Analyze = () => {
                   />
                 </div>
 
-                <div className="space-y-3">
+                {/* <div className="space-y-3">
                   <Label>Marketing Goals (Optional)</Label>
                   <div className="flex flex-wrap gap-2">
                     {marketingGoals.map(goal => (
@@ -252,7 +271,7 @@ const Analyze = () => {
                       </Badge>
                     ))}
                   </div>
-                </div>
+                </div> */}
 
                 <div className="pt-6">
                   <Button 

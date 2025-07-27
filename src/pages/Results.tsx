@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import html2pdf from "html2pdf.js";
 import { useRef } from "react";
+import  LoadingScreen  from "../pages/LoadingScreen";
 
 import { 
   Zap, TrendingUp, Target, Users, Globe, ArrowRight, 
@@ -27,6 +28,9 @@ const Results = () => {
   const location = useLocation();
   const [showResults, setShowResults] = useState(false);
   const analysisData = location.state?.analysisData as AnalysisData;
+  const [logs, setLogs] = useState<string[]>([]);
+const flowId = location.state?.flowId;
+
 
   // Mock Blynx Score and insights based on form data
   const blynxScore = Math.floor(Math.random() * 30) + 65; // 65-95 range
@@ -36,12 +40,41 @@ const Results = () => {
   const audienceAlignment = Math.floor(Math.random() * 25) + 70;
 const reportRef = useRef<HTMLDivElement>(null);
 
+  // useEffect(() => {
+  //   const timer = setTimeout(() => {
+  //     setShowResults(true);
+  //   }, 1000);
+  //   return () => clearTimeout(timer);
+  // }, []);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowResults(true);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
+  if (!flowId) return;
+
+  const ws = new WebSocket(`wss://blynx-backend.azurewebsites.net/api/v1/agents/logs/${flowId}`);
+  ws.onopen = () => {
+    console.log("WebSocket connected");
+  };
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === "logs") {
+      setLogs(prev => [...prev, data.data]);
+    } else if (data.type === "status" && data.data.final) {
+      console.log("Flow completed");
+    }
+  };
+  ws.onerror = (error) => {
+    console.error("WebSocket error", error);
+  };
+  ws.onclose = () => {
+    console.log("WebSocket closed");
+  };
+  return () => ws.close();
+}, [flowId]);
+
+if (!showResults) {
+  return <LoadingScreen logs={logs} />;
+}
+
 
   if (!analysisData) {
     return (
@@ -120,7 +153,7 @@ const reportRef = useRef<HTMLDivElement>(null);
 
       <div className="container mx-auto px-4 py-12">
         {!showResults ? (
-          // Loading State
+          //Loading State
           <div className="max-w-4xl mx-auto text-center">
             <div className="mb-8">
               <div className="animate-pulse">
@@ -152,6 +185,8 @@ const reportRef = useRef<HTMLDivElement>(null);
               </div>
             </div>
           </div>
+          
+          
         ) : (
           // Results Display
           <div className="max-w-6xl mx-auto" ref={reportRef}>
